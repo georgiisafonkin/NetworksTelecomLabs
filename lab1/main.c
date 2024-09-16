@@ -40,17 +40,18 @@ void* peers_listener_func(void* args) {
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
 
+    //receiving local area network addresses
     if (getaddrinfo(NULL, "12345", &hints, &result) != 0) {
         perror("getaddrinfo");
         pthread_exit(NULL);
     }
 
+    //receiving socket file descriptor
     socket_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (socket_fd == -1) {
         perror("socket");
         freeaddrinfo(result);
         pthread_exit(NULL);
     }
-
 
 }
