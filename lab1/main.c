@@ -24,7 +24,7 @@ int peer_count = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* peers_listener_func(void* args);
-void* peers_communicator_func(void * args);
+void* peers_speaker_func(void * args);
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -44,7 +44,7 @@ void* peers_listener_func(void* args) {
     hints.ai_flags = AI_PASSIVE;
 
     //receiving local area network addresses
-    if (getaddrinfo(NULL, "12345", &hints, &result) != 0) {
+    if (getaddrinfo(NULL, "12345", &hints, &result) != 0) { //TODO SMTH WITH PORT
         perror("getaddrinfo");
         pthread_exit(NULL);
     }
@@ -129,5 +129,35 @@ void* peers_listener_func(void* args) {
     }
 
     close(socket_fd);
+    pthread_exit(NULL);
+}
+
+void* peers_speaker_func(void * args) {
+    char* multicast_group_address = (char*)args;
+    int socket_fd;
+    struct addrinfo hints, *result;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if (getaddrinfo(multicast_group_address, "12345", &hints, &result) != 0) { //TODO SMTH WITH PORT
+        perror("getaddrinfo");
+        pthread_exit(NULL);
+    }
+
+    socket_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (socket_fd < 0) {
+        perror("socket");
+        pthread_exit(NULL);
+    }
+
+    while(true) {
+        const char* message = "Hello from multicast peer!";
+        sendto(socket_fd, message, strlen(message), 0, result->ai_addr, result->ai_addrlen);
+        sleep(5);
+    }
+    close(socket_fd);
+    freeaddrinfo(result);
     pthread_exit(NULL);
 }
