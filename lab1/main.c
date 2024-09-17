@@ -10,13 +10,13 @@
 #include <netdb.h>
 #include <errno.h>
 #include <error.h>
-
+#include <stdbool.h>
 
 
 typedef struct {
     char ip[INET6_ADDRSTRLEN];
     bool is_active;
-};
+}peer_t;
 
 peer_t peers[100];
 int peer_count = 0;
@@ -33,6 +33,7 @@ int main(int argc, char* argv[]) {
 }
 
 void* peers_listener_func(void* args) {
+    char* multicast_group_address = (char*)args;
     int socket_fd;
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
@@ -54,4 +55,26 @@ void* peers_listener_func(void* args) {
         pthread_exit(NULL);
     }
 
+    //connecting to multicast group
+    if (result->ai_family == AF_INET) {
+        struct ip_mreq ipv4_mreq;
+        //assigning multicast-group address in byte as binary data in network byte order
+        ipv4_mreq.imr_multiaddr.s_addr = inet_addr(multicast_group_address); //TO DO it with aton later, because it more modern and safe
+        //idk why it is here
+        ipv4_mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+        //set options from "mreq" structure to our socket
+        setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &ipv4_mreq, sizeof(ipv4_mreq));
+    } else if (result->ai_family == AF_INET6) {
+        struct ipv6_mreq ipv6_mreq;
+        inet_pton(AF_INET6, multicast_group_address, &ipv6_mreq.ipv6mr_multiaddr);
+        ipv6_mreq.ipv6mr_interface = 0; //default interface
+        setsockopt(socket_fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &ipv6_mreq, sizeof(ipv6_mreq));
+    }
+
+    bind(socket_fd, result->ai_addr, result->ai_addrlen);
+    freeaddrinfo(result);
+
+    while(true) {
+
+    }
 }
