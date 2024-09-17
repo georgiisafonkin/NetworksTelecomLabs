@@ -29,6 +29,7 @@ void* peers_speaker_func(void * args);
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <multicast_address>\n", argv[0]);
+        return EXIT_FAILURE;
     }
 
     pthread_t listener_tid, speaker_tid;
