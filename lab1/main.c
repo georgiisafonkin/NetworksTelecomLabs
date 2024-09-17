@@ -30,6 +30,15 @@ int main(int argc, char* argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <multicast_address>\n", argv[0]);
     }
+
+    pthread_t listener_tid, speaker_tid;
+
+    pthread_create(&listener_tid, NULL, peers_listener_func, argv[1]);
+    pthread_create(&speaker_tid, NULL, peers_speaker_func, argv[1]);
+
+    pthread_join(listener_tid, NULL);
+    pthread_join(speaker_tid, NULL);
+
     return EXIT_SUCCESS;
 }
 
