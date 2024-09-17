@@ -12,6 +12,7 @@
 #include <error.h>
 #include <stdbool.h>
 
+#define BUFFER_SIZE 64
 
 typedef struct {
     char ip[INET6_ADDRSTRLEN];
@@ -34,6 +35,7 @@ int main(int argc, char* argv[]) {
 
 void* peers_listener_func(void* args) {
     char* multicast_group_address = (char*)args;
+    char buffer[BUFFER_SIZE];
     int socket_fd;
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
@@ -59,7 +61,7 @@ void* peers_listener_func(void* args) {
     if (result->ai_family == AF_INET) {
         struct ip_mreq ipv4_mreq;
         //assigning multicast-group address in byte as binary data in network byte order
-        ipv4_mreq.imr_multiaddr.s_addr = inet_addr(multicast_group_address); //TO DO it with aton later, because it more modern and safe
+        ipv4_mreq.imr_multiaddr.s_addr = inet_addr(multicast_group_address); //TODO it with aton later, because it more modern and safe
         //idk why it is here
         ipv4_mreq.imr_interface.s_addr = htonl(INADDR_ANY);
         //set options from "mreq" structure to our socket
@@ -74,7 +76,58 @@ void* peers_listener_func(void* args) {
     bind(socket_fd, result->ai_addr, result->ai_addrlen);
     freeaddrinfo(result);
 
-    while(true) {
+    //listening...
+    while (1) {
+        socklen_t addr_len = sizeof(struct sockaddr_storage);
+        struct sockaddr_storage addr;
+        int n = recvfrom(socket_fd, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &addr, &addr_len);
+        if (n < 0) {
+            perror("recvfrom");
+            continue;
+        }
+        buffer[n] = '\0';
 
+        char ip[INET6_ADDRSTRLEN];
+        if (addr.ss_family == AF_INET) {
+            struct sockaddr_in *s = (struct sockaddr_in *) &addr;
+            inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+        } else {
+            struct sockaddr_in6 *s = (struct sockaddr_in6 *) &addr;
+            inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+        }
+
+        //updating list of peers
+        pthread_mutex_lock(&mutex);
+
+        int found = 0;
+
+        for (int i = 0; i < peer_count; ++i) {
+            if (strcmp(peers[i].ip, ip) == 0) {
+                peers[i].is_active = true;
+                found = 1;
+                break;
+            }
+        }
+
+        if (!found && peer_count < 100) {
+            strcpy(peers[peer_count].ip, ip);
+            peers[peer_count].is_active = true;
+            ++peer_count;
+        }
+
+        pthread_mutex_unlock(&mutex);
+
+        //output the list of active peers
+        printf("active copies:\n");
+        pthread_mutex_lock(&mutex);
+        for (int i = 0; i < peer_count; ++i) {
+            if (peers[i].is_active) {
+                printf("%s\n", peers[i].ip);
+            }
+        }
+        pthread_mutex_unlock(&mutex);
     }
+
+    close(socket_fd);
+    pthread_exit(NULL);
 }
