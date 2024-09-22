@@ -12,6 +12,7 @@
 #include <error.h>
 
 #define BUFFER_SIZE 64
+#define LISTENER_PORT 4040
 
 typedef struct {
     char ip[INET6_ADDRSTRLEN];
@@ -23,7 +24,7 @@ int peer_count = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int create_socket(int domain, int type, int protocol);
-int configure_socket(int socket_fd);
+int configure_listener_socket(int socket_fd, const char* mc_group_addr);
 int join_multicast_group(int socket_fd, const char* group_address);
 
 void* peers_listener_func(void* args);
@@ -41,11 +42,11 @@ int main(int argc, char* argv[]) {
 
     pthread_t listener_tid, speaker_tid;
 
-    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv);
-    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)argv);
+    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv[1]);
+//    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)argv[1]);
 
     pthread_join(listener_tid, NULL);
-    pthread_join(speaker_tid, NULL);
+//    pthread_join(speaker_tid, NULL);
 
     return EXIT_SUCCESS;
 }
@@ -57,8 +58,32 @@ int create_socket(int domain, int type, int protocol) {
     }
 }
 
-int configure_socket(int socket_fd) {
+int configure_listener_socket(int socket_fd, const char* mc_group_addr) {
+    struct sockaddr_in sin;
 
+    bzero(&sin, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_ANY);
+    sin.sin_port = htons(LISTENER_PORT);
+
+    if (bind(socket_fd, (struct sockaddr *)&sin, sizeof(sin))==-1) {
+        perror("bind failed");
+        exit(1);
+    }
+
+//    if (inet_pton(AF_INET, mc_group_addr, &sin.sin_addr) <= 0) {
+//        handle_error("Invalid address");
+//    }
+//    if (bind(socket_fd, (struct sockaddr*)&sin, sizeof(sin)) != 0) {
+//        handle_error("Can't bind socket");
+//    }
+
+    //make socket reusable
+    const int optVal = 1;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(optVal)) != 0 ||
+        setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT, &optVal, sizeof(optVal)) != 0) {
+        handle_error("Can't set socket options");
+    }
 }
 
 int join_multicast_group(int socket_fd, const char* group_address) {
@@ -88,11 +113,42 @@ int join_multicast_group(int socket_fd, const char* group_address) {
 }
 
 void* peers_listener_func(void* args) {
+    const char* mc_group_addr = (char*)args;
 
+    char buffer[1024];
+
+    int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
+    configure_listener_socket(socket_fd, mc_group_addr);
+    join_multicast_group(socket_fd, mc_group_addr);
+
+    while(1) {
+        int responseLen = recvfrom(socket_fd, buffer, 1024, 0, NULL, NULL);
+        if (responseLen < 0) {
+            handle_error("can't receive a message");
+        }
+        buffer[responseLen] = '\0';
+
+        printf("Received message: %s\n", buffer);
+
+        sleep(5);
+    }
 }
 
 void* peers_speaker_func(void * args) {
+    const char* mc_group_addr = (char*)args;
 
+    char buffer[1024];
+
+    int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
+    configure_listener_socket(socket_fd, mc_group_addr);
+    join_multicast_group(socket_fd, mc_group_addr);
+
+    while(1) {
+        const char* msg = "Hello from multicast group!\n";
+        sendto(socket_fd, msg, strlen(msg), 0, NULL, 0);
+
+        sleep(5);
+    }
 }
 
 void handle_error(const char* error_msg) {
