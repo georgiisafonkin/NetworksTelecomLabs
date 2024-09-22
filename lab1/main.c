@@ -10,7 +10,6 @@
 #include <netdb.h>
 #include <errno.h>
 #include <error.h>
-#include <stdbool.h>
 
 #define BUFFER_SIZE 64
 
@@ -23,19 +22,20 @@ peer_t peers[100];
 int peer_count = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void handle_error(const char* error_msg);
 void* peers_listener_func(void* args);
 void* peers_speaker_func(void * args);
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <multicast_address>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <multicast_address> <port>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     pthread_t listener_tid, speaker_tid;
 
-    pthread_create(&listener_tid, NULL, peers_listener_func, argv[1]);
-    pthread_create(&speaker_tid, NULL, peers_speaker_func, argv[1]);
+    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv);
+    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)argv);
 
     pthread_join(listener_tid, NULL);
     pthread_join(speaker_tid, NULL);
@@ -44,7 +44,10 @@ int main(int argc, char* argv[]) {
 }
 
 void* peers_listener_func(void* args) {
-    char* multicast_group_address = (char*)args;
+    char** argv = (char**)args;
+    char* multicast_group_address = argv[1];
+    char* port = argv[2];
+    printf("Readed port: %s\n", port);
     char buffer[BUFFER_SIZE];
     int socket_fd;
     struct addrinfo hints, *result;
@@ -54,7 +57,7 @@ void* peers_listener_func(void* args) {
     hints.ai_flags = AI_PASSIVE;
 
     //receiving local area network addresses
-    if (getaddrinfo(NULL, "12345", &hints, &result) != 0) { //TODO SMTH WITH PORT
+    if (getaddrinfo(NULL, port, &hints, &result) != 0) { //TODO SMTH WITH PORT
         perror("getaddrinfo");
         pthread_exit(NULL);
     }
@@ -96,6 +99,7 @@ void* peers_listener_func(void* args) {
             continue;
         }
         buffer[n] = '\0';
+        printf("%s\n", buffer);
 
         char ip[INET6_ADDRSTRLEN];
         if (addr.ss_family == AF_INET) {
@@ -132,7 +136,7 @@ void* peers_listener_func(void* args) {
         pthread_mutex_lock(&mutex);
         for (int i = 0; i < peer_count; ++i) {
             if (peers[i].is_active) {
-                printf("%s\n", peers[i].ip);
+                printf("%s:%s\n", peers[i].ip, port);
             }
         }
         pthread_mutex_unlock(&mutex);
@@ -143,7 +147,9 @@ void* peers_listener_func(void* args) {
 }
 
 void* peers_speaker_func(void * args) {
-    char* multicast_group_address = (char*)args;
+    char** argv = (char**)args;
+    char* multicast_group_address = argv[1];
+    char* port = argv[2];
     int socket_fd;
     struct addrinfo hints, *result;
 
@@ -151,7 +157,7 @@ void* peers_speaker_func(void * args) {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
 
-    if (getaddrinfo(multicast_group_address, "12345", &hints, &result) != 0) { //TODO SMTH WITH PORT
+    if (getaddrinfo(multicast_group_address, port, &hints, &result) != 0) { //TODO SMTH WITH PORT
         perror("getaddrinfo");
         pthread_exit(NULL);
     }
@@ -163,11 +169,18 @@ void* peers_speaker_func(void * args) {
     }
 
     while(true) {
-        const char* message = "Hello from multicast peer!";
+        char* message = (char*) malloc(256);
+        strcpy(message, "Hello from the peer with port ");
+        strcpy(message + sizeof("Hello from the peer with port "), result->ai_addr->sa_data);
         sendto(socket_fd, message, strlen(message), 0, result->ai_addr, result->ai_addrlen);
         sleep(5);
     }
     close(socket_fd);
     freeaddrinfo(result);
     pthread_exit(NULL);
+}
+
+void handle_error(const char* error_msg) {
+    perror(error_msg);
+    exit(EXIT_FAILURE);
 }
