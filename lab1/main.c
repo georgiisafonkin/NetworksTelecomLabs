@@ -42,11 +42,31 @@ int main(int argc, char* argv[]) {
 
     pthread_t listener_tid, speaker_tid;
 
-    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv[1]);
+//    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv[1]);
 //    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)argv[1]);
 
-    pthread_join(listener_tid, NULL);
+//    pthread_join(listener_tid, NULL);
 //    pthread_join(speaker_tid, NULL);
+
+    //TEST, will be deleted or replaced later
+    const char* mc_group_addr = argv[1];
+    char buffer[1024];
+
+    int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
+    configure_listener_socket(socket_fd, mc_group_addr);
+    join_multicast_group(socket_fd, mc_group_addr);
+
+    while(1) {
+        int responseLen = recvfrom(socket_fd, buffer, 1024, 0, NULL, NULL);
+        if (responseLen < 0) {
+            handle_error("can't receive a message");
+        }
+        buffer[responseLen] = '\0';
+
+        printf("Received message: %s\n", buffer);
+
+        sleep(5);
+    }
 
     return EXIT_SUCCESS;
 }
@@ -66,7 +86,7 @@ int configure_listener_socket(int socket_fd, const char* mc_group_addr) {
     sin.sin_addr.s_addr = htonl(INADDR_ANY);
     sin.sin_port = htons(LISTENER_PORT);
 
-    if (bind(socket_fd, (struct sockaddr *)&sin, sizeof(sin))==-1) {
+    if (bind(socket_fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
         perror("bind failed");
         exit(1);
     }
@@ -90,11 +110,12 @@ int join_multicast_group(int socket_fd, const char* group_address) {
     if (is_valid_ipv4_addr(group_address)) {
         struct ip_mreq mreq;
 
-        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr)) != 1) {
+        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) != 1) {
             handle_error("inet_pton");
         }
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
-        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0) {
+        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
             handle_error("can't join multicast group");
         }
     } else if (is_valid_ipv6_addr(group_address)) {
