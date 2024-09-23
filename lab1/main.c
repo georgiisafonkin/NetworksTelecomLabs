@@ -127,7 +127,7 @@ void* peers_listener_func(void* args) {
 
     printf("listener finished socket configuration\n");
 
-    int sinlen = sizeof(sin);
+    socklen_t sinlen = sizeof(sin);
     while(1) {
         printf("listener invoke recvfrom func\n");
         int responseLen = recvfrom(socket_fd, buffer, 1024, 0, (struct sockaddr*)&sin, &sinlen);
