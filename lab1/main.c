@@ -24,9 +24,10 @@ int peer_count = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int create_socket(int domain, int type, int protocol);
-void configure_listener_socket(int socket_fd, const char* mc_group_addr);
+void make_socket_reusable(int socket_fd);
+void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr);
 void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr);
-int join_multicast_group(int socket_fd, const char* group_address);
+void join_multicast_group(int socket_fd, const char* group_address);
 
 void* peers_listener_func(void* args);
 void* peers_speaker_func(void * args);
@@ -59,24 +60,22 @@ int create_socket(int domain, int type, int protocol) {
     }
 }
 
-void configure_listener_socket(int socket_fd, const char* mc_group_addr) {
-    struct sockaddr_in sin;
+void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr) {
+    bzero(sin, sizeof(*sin));
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = htonl(INADDR_ANY);
+    sin->sin_port = htons(LISTENER_PORT);
 
-    bzero(&sin, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = htonl(INADDR_ANY);
-    sin.sin_port = htons(LISTENER_PORT);
-
-    if (bind(socket_fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+    if (bind(socket_fd, (struct sockaddr*)sin, sizeof(*sin)) < 0) {
         perror("bind failed");
         exit(1);
     }
+}
 
-    //make socket reusable
-    const int optVal = 1;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(optVal)) != 0 ||
-        setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT, &optVal, sizeof(optVal)) != 0) {
-        handle_error("Can't set socket options");
+void make_socket_reusable(int socket_fd) {
+    u_int yes = 1;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*) &yes, sizeof(yes)) < 0){
+        handle_error("can't make socket reusable");
     }
 }
 
@@ -87,16 +86,17 @@ void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, const char
     sin->sin_port = htons(SPEAKER_PORT);
 }
 
-int join_multicast_group(int socket_fd, const char* group_address) {
+void join_multicast_group(int socket_fd, const char* group_address) {
     if (is_valid_ipv4_addr(group_address)) {
         struct ip_mreq mreq;
 
-        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) != 1) {
+        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) <= 0) {
             handle_error("inet_pton");
         }
+//        mreq.imr_multiaddr.s_addr = inet_addr(group_address);
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
-        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0) {
             handle_error("can't join multicast group");
         }
     } else if (is_valid_ipv6_addr(group_address)) {
@@ -119,12 +119,19 @@ void* peers_listener_func(void* args) {
 
     char buffer[1024];
 
+    struct sockaddr_in sin;
     int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
-    configure_listener_socket(socket_fd, mc_group_addr);
+    make_socket_reusable(socket_fd);
+    configure_listener_socket(socket_fd, &sin, mc_group_addr);
     join_multicast_group(socket_fd, mc_group_addr);
 
+    printf("listener finished socket configuration\n");
+
+    int sinlen = sizeof(sin);
     while(1) {
-        int responseLen = recvfrom(socket_fd, buffer, 1024, 0, NULL, NULL);
+        printf("listener invoke recvfrom func\n");
+        int responseLen = recvfrom(socket_fd, buffer, 1024, 0, (struct sockaddr*)&sin, &sinlen);
+        printf("recvfrom finished\n");
         if (responseLen < 0) {
             handle_error("can't receive a message");
         }
@@ -132,7 +139,8 @@ void* peers_listener_func(void* args) {
 
         printf("Received message: %s\n", buffer);
 
-        sleep(5);
+        printf("listener is here\n");
+//        sleep(5);
     }
 }
 
@@ -153,6 +161,7 @@ void* peers_speaker_func(void * args) {
         if (n_bytes < 0) {
             handle_error("sendto");
         }
+        printf("speaker is here!\n");
         sleep(5);
     }
 }
