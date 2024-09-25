@@ -32,7 +32,6 @@ void* peers_speaker_func(void * args);
 
 int is_valid_ipv4_addr(const char* address);
 int is_valid_ipv6_addr(const char* address);
-void get_sock_name(int socket_fd, struct sockaddr_in* addr, socklen_t* addr_len);
 int get_addr_as_str(struct sockaddr_in addr, char* str_buffer, size_t buff_len);
 
 void handle_error(const char* error_msg);
@@ -97,34 +96,6 @@ void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_stru
 }
 
 void listener_join_multicast_group(int socket_fd, const char* group_address) {
-    if (is_valid_ipv4_addr(group_address)) {
-        struct ip_mreq mreq;
-
-        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) <= 0) {
-            handle_error("inet_pton");
-        }
-//        mreq.imr_multiaddr.s_addr = inet_addr(group_address);
-        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-
-        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0) {
-            handle_error("can't join multicast group");
-        }
-    } else if (is_valid_ipv6_addr(group_address)) {
-        struct ipv6_mreq mreq6;
-
-        if (inet_pton(AF_INET, group_address, &(mreq6.ipv6mr_multiaddr)) != 1) {
-            handle_error("inet_pton");
-        }
-
-        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)) != 0) {
-            handle_error("can't join multicast group");
-        }
-    } else {
-        handle_error("invalid ip address");
-    }
-}
-
-void speaker_join_multicast_group(int socket_fd, const char* group_address) {
     if (is_valid_ipv4_addr(group_address)) {
         struct ip_mreq mreq;
 
@@ -236,12 +207,6 @@ int is_valid_ipv6_addr(const char* address) {
     struct sockaddr_in sa;
     int result = inet_pton(AF_INET6, address, &(sa.sin_addr));
     return result == 1;
-}
-
-void get_sock_name(int socket_fd, struct sockaddr_in* addr, socklen_t* addr_len) {
-    if (getsockname(socket_fd, (struct sockaddr*)addr, addr_len) < 0) {
-        handle_error("Can't get name of socket");
-    }
 }
 
 int get_addr_as_str(struct sockaddr_in addr, char* str_buffer, size_t buff_len) {
