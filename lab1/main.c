@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 
 #define PORT_LEN 5
+#define ADDRS_BUF_SIZE 32
 
 typedef struct {
     const char* mc_group_addr;
@@ -16,12 +17,15 @@ typedef struct {
     const char* port;
 } input_struct;
 
+//TODO structure with ip and last time being in lan
+//TODO set/array of this struct and funcs to check active peers in lan
+//TODO IPv6
+
 int create_socket(int domain, int type, int protocol);
 void make_socket_reusable(int socket_fd);
 void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct);
 void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct);
 void listener_join_multicast_group(int socket_fd, const char* group_address);
-void speaker_join_multicast_group(int socket_fd, const char* group_address);
 
 void* peers_listener_func(void* args);
 void* peers_speaker_func(void * args);
@@ -188,7 +192,7 @@ void* peers_speaker_func(void * args) {
     struct sockaddr_in addr;
     int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
-    configure_speaker_socket(socket_fd, &addr, in_struct);
+    configure_speaker_socket(socket_fd, &addr, in_struct); //TODO rename func to configure send socket
 //    speaker_join_multicast_group(socket_fd, in_struct);
 
 //    socklen_t sinlen = sizeof(addr);
@@ -196,6 +200,9 @@ void* peers_speaker_func(void * args) {
     unique_addr.sin_family = AF_INET;
     unique_addr.sin_addr.s_addr = inet_addr(in_struct->speaker_addr);
     unique_addr.sin_port = htons(atoi(in_struct->port));
+    if (bind(socket_fd, (struct sockaddr*)&unique_addr, sizeof(unique_addr)) < 0) {
+        handle_error("can't bind socket to unique addr");
+    }
 //    get_sock_name(socket_fd, &unique_addr, &sinlen);
     char addr_str[INET_ADDRSTRLEN + PORT_LEN + 1];
     get_addr_as_str(unique_addr, addr_str, sizeof(addr_str));
