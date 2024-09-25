@@ -7,9 +7,11 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 
 #define PORT_LEN 5
-#define ADDRS_BUF_SIZE 32
+#define PEERS_N 32
+#define LIVE_TIMER 5 * 1000000
 
 typedef struct {
     const char* mc_group_addr;
@@ -17,9 +19,30 @@ typedef struct {
     const char* port;
 } input_struct;
 
+typedef struct {
+    const char* ip_addr;
+    double last_time_was_active;
+}peer_t;
+
+typedef struct {
+    peer_t peers[PEERS_N];
+    int length;
+    int capacity;
+}peers_list;
+
+
+pthread_mutex_t mutex;
+
 //TODO structure with ip and last time being in lan
 //TODO set/array of this struct and funcs to check active peers in lan
 //TODO IPv6
+
+peers_list list;
+
+int is_alive(peer_t peer);
+int remove_peer_at(int i, peers_list* list);
+void remove_dead_peers(peers_list list);
+void update_list_with_peer(peer_t peer, peers_list* list);
 
 int create_socket(int domain, int type, int protocol);
 void make_socket_reusable(int socket_fd);
@@ -56,6 +79,46 @@ int main(int argc, char* argv[]) {
     pthread_join(speaker_tid, NULL);
 
     return EXIT_SUCCESS;
+}
+
+int is_alive(peer_t peer) {
+    if (clock() - peer.last_time_was_active > LIVE_TIMER) {
+        return 0;
+    }
+    return 1;
+}
+
+int remove_peer_at(int i, peers_list* list) {
+    int distance = list->length - i;
+    if (distance < 0) {
+        handle_error("remove_peer_at: incorrect index");
+    }
+    memmove(&list->peers + i, &list->peers + i + 1, distance * sizeof(peer_t));
+    bzero(&list->peers + list->length - 1, 1);
+    --list->length;
+}
+
+void remove_dead_peers(peers_list list) {
+    for(int i = 0; i < list.length; ++i) {
+        if (!is_alive(list.peers[i])) {
+            remove_peer_at(i, &list);
+        }
+    }
+}
+
+void update_list_with_peer(peer_t peer, peers_list* list) {
+    int is_here_already = 0;
+    for(int i = 0; i < list->length; ++i) {
+        if (strcmp(peer.ip_addr, list->peers[i].ip_addr)) {
+            is_here_already = 1;
+            list->peers[i].last_time_was_active = peer.last_time_was_active;
+        }
+    }
+
+    if (!is_here_already) {
+        list->peers[list->length] = peer;
+        ++list->length;
+    }
 }
 
 int create_socket(int domain, int type, int protocol) {
@@ -124,7 +187,6 @@ void listener_join_multicast_group(int socket_fd, const char* group_address) {
 }
 
 void* peers_listener_func(void* args) {
-//    const char* mc_group_addr = (char*)args;
     input_struct* in_struct = (input_struct*)args;
 
     char buffer[1024];
@@ -138,6 +200,10 @@ void* peers_listener_func(void* args) {
     printf("listener finished socket configuration\n");
 
     socklen_t sinlen = sizeof(sin);
+
+    list.length = 0;
+    list.capacity = PEERS_N;
+
     while(1) {
         printf("listener invoke recvfrom func\n");
         int responseLen = recvfrom(socket_fd, buffer, 1024, 0, (struct sockaddr*)&sin, &sinlen);
@@ -146,6 +212,12 @@ void* peers_listener_func(void* args) {
             handle_error("can't receive a message");
         }
         buffer[responseLen] = '\0';
+
+        peer_t listened_peer;
+        listened_peer.ip_addr = buffer;
+        listened_peer.last_time_was_active = clock(); //TODO FINISH IT
+
+        update_list_with_peer(listened_peer, &list);
 
         printf("Received message: %s\n", buffer);
 
