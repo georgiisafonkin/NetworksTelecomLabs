@@ -8,24 +8,20 @@
 #include <string.h>
 #include <sys/socket.h>
 
-#define LISTENER_PORT 4040
-#define SPEAKER_PORT 4040
 #define PORT_LEN 5
 
 typedef struct {
-    char ip[INET6_ADDRSTRLEN];
-    bool is_active;
-}peer_t;
-
-peer_t peers[100];
-int peer_count = 0;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    const char* mc_group_addr;
+    const char* speaker_addr;
+    const char* port;
+} input_struct;
 
 int create_socket(int domain, int type, int protocol);
 void make_socket_reusable(int socket_fd);
-void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr);
-void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr);
+void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct);
+void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct);
 void listener_join_multicast_group(int socket_fd, const char* group_address);
+void speaker_join_multicast_group(int socket_fd, const char* group_address);
 
 void* peers_listener_func(void* args);
 void* peers_speaker_func(void * args);
@@ -38,15 +34,20 @@ int get_addr_as_str(struct sockaddr_in addr, char* str_buffer, size_t buff_len);
 void handle_error(const char* error_msg);
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <multicast_address>\n", argv[0]);
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <multicast_address> <speaker_address> <port>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
+    input_struct in;
+    in.mc_group_addr = argv[1];
+    in.speaker_addr = argv[2];
+    in.port = argv[3];
+
     pthread_t listener_tid, speaker_tid;
 
-    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)argv[1]);
-    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)argv[1]);
+    pthread_create(&listener_tid, NULL, peers_listener_func, (void*)&in);
+    pthread_create(&speaker_tid, NULL, peers_speaker_func, (void*)&in);
 
     pthread_join(listener_tid, NULL);
     pthread_join(speaker_tid, NULL);
@@ -61,11 +62,11 @@ int create_socket(int domain, int type, int protocol) {
     }
 }
 
-void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr) {
+void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct) {
     bzero(sin, sizeof(*sin));
     sin->sin_family = AF_INET;
     sin->sin_addr.s_addr = htonl(INADDR_ANY);
-    sin->sin_port = htons(LISTENER_PORT);
+    sin->sin_port = htons(atoi(in_struct->port)); //TODO
 
     if (bind(socket_fd, (struct sockaddr*)sin, sizeof(*sin)) < 0) {
         perror("bind failed");
@@ -80,11 +81,11 @@ void make_socket_reusable(int socket_fd) {
     }
 }
 
-void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, const char *mc_group_addr) {
+void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct) {
     bzero(sin, sizeof(*sin));
     sin->sin_family = AF_INET;
-    sin->sin_addr.s_addr = inet_addr(mc_group_addr); //TODO Replace it to inet_pton or smth.
-    sin->sin_port = htons(SPEAKER_PORT);
+    sin->sin_addr.s_addr = inet_addr(in_struct->mc_group_addr);
+    sin->sin_port = htons(atoi(in_struct->port));
 
 //    if (bind(socket_fd, (struct sockaddr*)sin, sizeof(*sin)) < 0) {
 //        handle_error("can't bind speaker:");
@@ -119,16 +120,45 @@ void listener_join_multicast_group(int socket_fd, const char* group_address) {
     }
 }
 
+void speaker_join_multicast_group(int socket_fd, const char* group_address) {
+    if (is_valid_ipv4_addr(group_address)) {
+        struct ip_mreq mreq;
+
+        if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) <= 0) {
+            handle_error("inet_pton");
+        }
+//        mreq.imr_multiaddr.s_addr = inet_addr(group_address);
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+
+        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0) {
+            handle_error("can't join multicast group");
+        }
+    } else if (is_valid_ipv6_addr(group_address)) {
+        struct ipv6_mreq mreq6;
+
+        if (inet_pton(AF_INET, group_address, &(mreq6.ipv6mr_multiaddr)) != 1) {
+            handle_error("inet_pton");
+        }
+
+        if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)) != 0) {
+            handle_error("can't join multicast group");
+        }
+    } else {
+        handle_error("invalid ip address");
+    }
+}
+
 void* peers_listener_func(void* args) {
-    const char* mc_group_addr = (char*)args;
+//    const char* mc_group_addr = (char*)args;
+    input_struct* in_struct = (input_struct*)args;
 
     char buffer[1024];
 
     struct sockaddr_in sin;
     int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
-    configure_listener_socket(socket_fd, &sin, mc_group_addr);
-    listener_join_multicast_group(socket_fd, mc_group_addr);
+    configure_listener_socket(socket_fd, &sin, in_struct);
+    listener_join_multicast_group(socket_fd, in_struct->mc_group_addr);
 
     printf("listener finished socket configuration\n");
 
@@ -150,21 +180,27 @@ void* peers_listener_func(void* args) {
 }
 
 void* peers_speaker_func(void * args) {
-    const char* mc_group_addr = (char*)args;
+//    const char* mc_group_addr = (char*)args;
+    input_struct* in_struct = (input_struct*)args;
 
     char buffer[1024];
 
     struct sockaddr_in addr;
     int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
-    configure_speaker_socket(socket_fd, &addr, mc_group_addr);
+    configure_speaker_socket(socket_fd, &addr, in_struct);
+//    speaker_join_multicast_group(socket_fd, in_struct);
 
-    socklen_t sinlen = sizeof(addr);
+//    socklen_t sinlen = sizeof(addr);
     struct sockaddr_in unique_addr;
-    get_sock_name(socket_fd, &unique_addr, &sinlen);
+    unique_addr.sin_family = AF_INET;
+    unique_addr.sin_addr.s_addr = inet_addr(in_struct->speaker_addr);
+    unique_addr.sin_port = htons(atoi(in_struct->port));
+//    get_sock_name(socket_fd, &unique_addr, &sinlen);
     char addr_str[INET_ADDRSTRLEN + PORT_LEN + 1];
     get_addr_as_str(unique_addr, addr_str, sizeof(addr_str));
     printf("speaker_unique_addr: %s\n", addr_str);
+
 
     while(1) {
         const char* msg = addr_str;
