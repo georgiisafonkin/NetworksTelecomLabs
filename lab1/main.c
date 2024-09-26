@@ -36,9 +36,8 @@ typedef struct {
 
 pthread_mutex_t mutex;
 
-//TODO structure with ip and last time being in lan
-//TODO set/array of this struct and funcs to check active peers in lan
-//TODO IPv6
+//TODO IPv6 support
+//TODO not count self in actives list
 
 peers_list list;
 clock_t last_time_checked;
