@@ -11,7 +11,10 @@
 
 #define PORT_LEN 5
 #define PEERS_N 32
-#define LIVE_TIMER 5 * 1000000
+#define LIVE_TIMOUT 60
+#define CHECK_TIMEOUT 60
+#define WRITE_TIMEOUT 5
+#define TIME_COEF 100000
 
 typedef struct {
     const char* mc_group_addr;
@@ -20,7 +23,7 @@ typedef struct {
 } input_struct;
 
 typedef struct {
-    const char* ip_addr;
+    char ip_addr[INET_ADDRSTRLEN];
     double last_time_was_active;
 }peer_t;
 
@@ -38,11 +41,15 @@ pthread_mutex_t mutex;
 //TODO IPv6
 
 peers_list list;
+clock_t last_time_checked;
+clock_t last_time_written;
+pthread_mutex_t mutex;
 
 int is_alive(peer_t peer);
 int remove_peer_at(int i, peers_list* list);
-void remove_dead_peers(peers_list list);
+void remove_dead_peers(peers_list *list);
 void update_list_with_peer(peer_t peer, peers_list* list);
+void print_actives(peers_list* list);
 
 int create_socket(int domain, int type, int protocol);
 void make_socket_reusable(int socket_fd);
@@ -82,9 +89,15 @@ int main(int argc, char* argv[]) {
 }
 
 int is_alive(peer_t peer) {
-    if (clock() - peer.last_time_was_active > LIVE_TIMER) {
+//    printf("time since last active time: %lf\n", ((double)(clock() - peer.last_time_was_active))/CLOCKS_PER_SEC);
+//    printf("live_timeout/time_coef: %lf\n", ((double)LIVE_TIMOUT/TIME_COEF));
+    pthread_mutex_lock(&mutex);
+    if (((double)(clock() - peer.last_time_was_active))/CLOCKS_PER_SEC > (double)LIVE_TIMOUT/TIME_COEF) {
+        printf("peer %s is dead\n", peer.ip_addr);
         return 0;
     }
+//    printf("peer is not dead\n");
+    pthread_mutex_unlock(&mutex);
     return 1;
 }
 
@@ -96,29 +109,56 @@ int remove_peer_at(int i, peers_list* list) {
     memmove(&list->peers + i, &list->peers + i + 1, distance * sizeof(peer_t));
     bzero(&list->peers + list->length - 1, 1);
     --list->length;
+//    printf("list's length decremented\n");
 }
 
-void remove_dead_peers(peers_list list) {
-    for(int i = 0; i < list.length; ++i) {
-        if (!is_alive(list.peers[i])) {
-            remove_peer_at(i, &list);
+void remove_dead_peers(peers_list *list) {
+    if (((double)(clock() - last_time_checked))/CLOCKS_PER_SEC <= (double)CHECK_TIMEOUT/TIME_COEF) {
+        return;
+    }
+    for(int i = 0; i < list->length; ++i) {
+        if (!is_alive(list->peers[i])) {
+            remove_peer_at(i, list);
         }
     }
+    last_time_checked = clock();
 }
 
 void update_list_with_peer(peer_t peer, peers_list* list) {
     int is_here_already = 0;
+
     for(int i = 0; i < list->length; ++i) {
-        if (strcmp(peer.ip_addr, list->peers[i].ip_addr)) {
+        if (strcmp(peer.ip_addr, list->peers[i].ip_addr) == 0) {
+//            printf("I SEE SAME ADDRS:\n");
+//            printf("checking peer: %s\n", peer.ip_addr);
+//            printf("peer at list with i = %d: %s\n", i, list->peers[i].ip_addr);
             is_here_already = 1;
             list->peers[i].last_time_was_active = peer.last_time_was_active;
         }
     }
 
+//    printf("is_here_already: %d\n", is_here_already);
+
     if (!is_here_already) {
-        list->peers[list->length] = peer;
+//        printf("LENGTH BEFORE ADDING: %d\n", list->length);
+//        printf("list's length incremented\n");
+        strcpy(list->peers[list->length].ip_addr, peer.ip_addr);
+//        list->peers[list->length].ip_addr = peer.ip_addr;
+        list->peers[list->length].last_time_was_active = peer.last_time_was_active;
         ++list->length;
+//        printf("LENGTH BEFORE ADDING: %d\n", list->length);
     }
+}
+
+void print_actives(peers_list* list) {
+    if (((double)(clock() - last_time_written))/CLOCKS_PER_SEC <= (double)WRITE_TIMEOUT/TIME_COEF) {
+        return;
+    }
+    printf("%d active copies:\n", list->length);
+    for (int i = 0; i < list->length; ++i) {
+        printf("%s\n", list->peers[i].ip_addr);
+    }
+    last_time_written = clock();
 }
 
 int create_socket(int domain, int type, int protocol) {
@@ -187,6 +227,8 @@ void listener_join_multicast_group(int socket_fd, const char* group_address) {
 }
 
 void* peers_listener_func(void* args) {
+    last_time_checked = clock();
+    last_time_written = clock();
     input_struct* in_struct = (input_struct*)args;
 
     char buffer[1024];
@@ -197,7 +239,7 @@ void* peers_listener_func(void* args) {
     configure_listener_socket(socket_fd, &sin, in_struct);
     listener_join_multicast_group(socket_fd, in_struct->mc_group_addr);
 
-    printf("listener finished socket configuration\n");
+//    printf("listener finished socket configuration\n");
 
     socklen_t sinlen = sizeof(sin);
 
@@ -205,23 +247,26 @@ void* peers_listener_func(void* args) {
     list.capacity = PEERS_N;
 
     while(1) {
-        printf("listener invoke recvfrom func\n");
+        remove_dead_peers(&list);
+//        printf("listener invoke recvfrom func\n");
         int responseLen = recvfrom(socket_fd, buffer, 1024, 0, (struct sockaddr*)&sin, &sinlen);
-        printf("recvfrom finished\n");
+//        printf("recvfrom finished\n");
         if (responseLen < 0) {
             handle_error("can't receive a message");
         }
         buffer[responseLen] = '\0';
 
         peer_t listened_peer;
-        listened_peer.ip_addr = buffer;
-        listened_peer.last_time_was_active = clock(); //TODO FINISH IT
+        strcpy(listened_peer.ip_addr, buffer);
+//        listened_peer.ip_addr = buffer;
+        listened_peer.last_time_was_active = clock();
 
         update_list_with_peer(listened_peer, &list);
 
-        printf("Received message: %s\n", buffer);
+        print_actives(&list);
+//        printf("Received message: %s\n", buffer);
 
-        printf("listener is here\n");
+//        printf("listener is here\n");
 //        sleep(5);
     }
 }
@@ -249,7 +294,7 @@ void* peers_speaker_func(void * args) {
 //    get_sock_name(socket_fd, &unique_addr, &sinlen);
     char addr_str[INET_ADDRSTRLEN + PORT_LEN + 1];
     get_addr_as_str(unique_addr, addr_str, sizeof(addr_str));
-    printf("speaker_unique_addr: %s\n", addr_str);
+//    printf("speaker_unique_addr: %s\n", addr_str);
 
 
     while(1) {
@@ -259,7 +304,7 @@ void* peers_speaker_func(void * args) {
         if (n_bytes < 0) {
             handle_error("sendto");
         }
-        printf("speaker is here!\n");
+//        printf("speaker is here!\n");
         sleep(5);
     }
 }
