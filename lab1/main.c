@@ -57,11 +57,11 @@ void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_stru
 void listener_join_multicast_group(int socket_fd, const char* group_address);
 
 void* peers_listener_func(void* args);
-void* peers_speaker_func(void * args);
+void* peers_speaker_func(void* args);
 
 int is_valid_ipv4_addr(const char* address);
 int is_valid_ipv6_addr(const char* address);
-int get_addr_as_str(struct sockaddr_in addr, char* str_buffer, size_t buff_len);
+int get_addr_as_str(struct sockaddr_in addr, char *str_buffer, size_t buff_len, input_struct *in_struct);
 
 void handle_error(const char* error_msg);
 
@@ -88,14 +88,11 @@ int main(int argc, char* argv[]) {
 }
 
 int is_alive(peer_t peer) {
-//    printf("time since last active time: %lf\n", ((double)(clock() - peer.last_time_was_active))/CLOCKS_PER_SEC);
-//    printf("live_timeout/time_coef: %lf\n", ((double)LIVE_TIMOUT/TIME_COEF));
     pthread_mutex_lock(&mutex);
     if (((double)(clock() - peer.last_time_was_active))/CLOCKS_PER_SEC > (double)LIVE_TIMOUT/TIME_COEF) {
         printf("peer %s is dead\n", peer.ip_addr);
         return 0;
     }
-//    printf("peer is not dead\n");
     pthread_mutex_unlock(&mutex);
     return 1;
 }
@@ -108,7 +105,6 @@ int remove_peer_at(int i, peers_list* list) {
     memmove(&list->peers + i, &list->peers + i + 1, distance * sizeof(peer_t));
     bzero(&list->peers + list->length - 1, 1);
     --list->length;
-//    printf("list's length decremented\n");
 }
 
 void remove_dead_peers(peers_list *list) {
@@ -128,24 +124,15 @@ void update_list_with_peer(peer_t peer, peers_list* list) {
 
     for(int i = 0; i < list->length; ++i) {
         if (strcmp(peer.ip_addr, list->peers[i].ip_addr) == 0) {
-//            printf("I SEE SAME ADDRS:\n");
-//            printf("checking peer: %s\n", peer.ip_addr);
-//            printf("peer at list with i = %d: %s\n", i, list->peers[i].ip_addr);
             is_here_already = 1;
             list->peers[i].last_time_was_active = peer.last_time_was_active;
         }
     }
 
-//    printf("is_here_already: %d\n", is_here_already);
-
     if (!is_here_already) {
-//        printf("LENGTH BEFORE ADDING: %d\n", list->length);
-//        printf("list's length incremented\n");
         strcpy(list->peers[list->length].ip_addr, peer.ip_addr);
-//        list->peers[list->length].ip_addr = peer.ip_addr;
         list->peers[list->length].last_time_was_active = peer.last_time_was_active;
         ++list->length;
-//        printf("LENGTH BEFORE ADDING: %d\n", list->length);
     }
 }
 
@@ -167,14 +154,15 @@ int create_socket(int domain, int type, int protocol) {
     }
 }
 
+//TODO replace sockaddr_in to sockaddr_storage
 void configure_listener_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct) {
     bzero(sin, sizeof(*sin));
-    sin->sin_family = AF_INET;
+    sin->sin_family = is_valid_ipv4_addr(in_struct->mc_group_addr) ? AF_INET : AF_INET6;
     sin->sin_addr.s_addr = htonl(INADDR_ANY);
     sin->sin_port = htons(atoi(in_struct->port)); //TODO
 
     if (bind(socket_fd, (struct sockaddr*)sin, sizeof(*sin)) < 0) {
-        perror("bind failed");
+        perror("configure_listener_socket bind failed");
         exit(1);
     }
 }
@@ -188,13 +176,12 @@ void make_socket_reusable(int socket_fd) {
 
 void configure_speaker_socket(int socket_fd, struct sockaddr_in *sin, input_struct *in_struct) {
     bzero(sin, sizeof(*sin));
-    sin->sin_family = AF_INET;
-    sin->sin_addr.s_addr = inet_addr(in_struct->mc_group_addr);
+    sin->sin_family = is_valid_ipv4_addr(in_struct->mc_group_addr) ? AF_INET : AF_INET6;
+    if (inet_pton(AF_INET, in_struct->mc_group_addr, &(sin->sin_addr.s_addr)) <= 0) {
+        handle_error("inet_pton");
+    }
+//    sin->sin_addr.s_addr = inet_addr(in_struct->mc_group_addr); //TODO replace it with inet_aton
     sin->sin_port = htons(atoi(in_struct->port));
-
-//    if (bind(socket_fd, (struct sockaddr*)sin, sizeof(*sin)) < 0) {
-//        handle_error("can't bind speaker:");
-//    }
 }
 
 void listener_join_multicast_group(int socket_fd, const char* group_address) {
@@ -232,8 +219,10 @@ void* peers_listener_func(void* args) {
 
     char buffer[1024];
 
+    struct sockaddr_storage sin_storage;
+
     struct sockaddr_in sin;
-    int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
+    int socket_fd = create_socket(is_valid_ipv4_addr(in_struct->mc_group_addr) ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
     configure_listener_socket(socket_fd, &sin, in_struct);
     listener_join_multicast_group(socket_fd, in_struct->mc_group_addr);
@@ -245,6 +234,7 @@ void* peers_listener_func(void* args) {
     list.length = 0;
     list.capacity = PEERS_N;
 
+    printf("listener is entering infinite loop\n");
     while(1) {
         remove_dead_peers(&list);
 //        printf("listener invoke recvfrom func\n");
@@ -277,25 +267,36 @@ void* peers_speaker_func(void * args) {
     char buffer[1024];
 
     struct sockaddr_in addr;
-    int socket_fd = create_socket(AF_INET, SOCK_DGRAM, 0);
+    if (is_valid_ipv4_addr(in_struct->speaker_addr)) {
+        printf("valid ipv4\n");
+    } else if (is_valid_ipv6_addr(in_struct->speaker_addr)) {
+        printf("valid ipv6\n");
+    } else {
+        printf("invalid addr\n");
+    }
+
+    int socket_fd = create_socket(is_valid_ipv4_addr(in_struct->mc_group_addr) ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
     configure_speaker_socket(socket_fd, &addr, in_struct); //TODO rename func to configure send socket
 //    speaker_join_multicast_group(socket_fd, in_struct);
 
 //    socklen_t sinlen = sizeof(addr);
     struct sockaddr_in unique_addr;
-    unique_addr.sin_family = AF_INET;
-    unique_addr.sin_addr.s_addr = inet_addr(in_struct->speaker_addr);
+    unique_addr.sin_family = is_valid_ipv4_addr(in_struct->speaker_addr) ? AF_INET : AF_INET6;
+    if (inet_pton(is_valid_ipv4_addr(in_struct->speaker_addr) ? AF_INET : AF_INET6, in_struct->speaker_addr, &(unique_addr.sin_addr.s_addr)) <= 0) {
+        handle_error("inet_pton");
+    }
+//    unique_addr.sin_addr.s_addr = inet_addr(in_struct->speaker_addr); //TODO replace it with unet_pton
     unique_addr.sin_port = htons(atoi(in_struct->port));
     if (bind(socket_fd, (struct sockaddr*)&unique_addr, sizeof(unique_addr)) < 0) {
         handle_error("can't bind socket to unique addr");
     }
 //    get_sock_name(socket_fd, &unique_addr, &sinlen);
-    char addr_str[INET_ADDRSTRLEN + PORT_LEN + 1];
-    get_addr_as_str(unique_addr, addr_str, sizeof(addr_str));
+    char addr_str[(is_valid_ipv4_addr(in_struct->speaker_addr) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN) + PORT_LEN + 1];
+    get_addr_as_str(unique_addr, addr_str, sizeof(addr_str), in_struct);
 //    printf("speaker_unique_addr: %s\n", addr_str);
 
-
+    printf("speaker is entering infinite loop\n");
     while(1) {
         const char* msg = addr_str;
         int n_bytes;
@@ -325,15 +326,17 @@ int is_valid_ipv6_addr(const char* address) {
     return result == 1;
 }
 
-int get_addr_as_str(struct sockaddr_in addr, char* str_buffer, size_t buff_len) {
+int get_addr_as_str(struct sockaddr_in addr, char *str_buffer, size_t buff_len, input_struct *in_struct) {
     //2 = ':' + '\0'
-    if (buff_len < INET_ADDRSTRLEN + PORT_LEN + 1) {
+    if (buff_len < (is_valid_ipv4_addr(in_struct->speaker_addr) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN) + PORT_LEN + 1) {
+        printf("here\n");
         return -1;
     }
 
-    char ip_str[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addr.sin_addr, ip_str, sizeof(ip_str));
+    char ip_str[is_valid_ipv4_addr(in_struct->speaker_addr) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN];
+    inet_ntop(is_valid_ipv4_addr(in_struct->speaker_addr) ? AF_INET : AF_INET6, &addr.sin_addr, ip_str, sizeof(ip_str));
     snprintf(str_buffer, buff_len, "%s:%d", ip_str, ntohs(addr.sin_port));
+    printf("speaker addr: %s\n", str_buffer);
     //strBuf[INET_ADDRSTRLEN + PORT_LEN + 1] = '\0';
     return 0;
 }
