@@ -23,7 +23,7 @@ typedef struct {
 } input_struct;
 
 typedef struct {
-    char ip_addr[INET_ADDRSTRLEN];
+    char ip_addr[INET6_ADDRSTRLEN + PORT_LEN + 1];
     double last_time_was_active;
 }peer_t;
 
@@ -155,7 +155,6 @@ int create_socket(int domain, int type, int protocol) {
     }
 }
 
-//TODO replace sockaddr_in to sockaddr_storage
 void configure_listener_socket(int socket_fd, struct sockaddr_storage *sin_storage, input_struct *in_struct) {
     bzero(sin_storage, sizeof(*sin_storage));
     if (is_valid_ipv4_addr(in_struct->mc_group_addr)) {
@@ -216,7 +215,6 @@ void listener_join_multicast_group(int socket_fd, const char* group_address) {
         if (inet_pton(AF_INET, group_address, &(mreq.imr_multiaddr.s_addr)) <= 0) {
             handle_error("inet_pton");
         }
-//        mreq.imr_multiaddr.s_addr = inet_addr(group_address);
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
         if (setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0) {
@@ -229,7 +227,7 @@ void listener_join_multicast_group(int socket_fd, const char* group_address) {
         }
 
         mreq6.ipv6mr_interface = 0;
-        printf("ipv6 multiaddr: %s", group_address);
+
         if (setsockopt(socket_fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)) != 0) {
             handle_error("can't join multicast group");
         }
@@ -252,19 +250,14 @@ void* peers_listener_func(void* args) {
     configure_listener_socket(socket_fd, &sin_storage, in_struct);
     listener_join_multicast_group(socket_fd, in_struct->mc_group_addr);
 
-//    printf("listener finished socket configuration\n");
-
     socklen_t sinlen = sizeof(sin_storage);
 
     list.length = 0;
     list.capacity = PEERS_N;
 
-    printf("listener is entering infinite loop\n");
     while(1) {
         remove_dead_peers(&list);
-//        printf("listener invoke recvfrom func\n");
         int responseLen = recvfrom(socket_fd, buffer, 1024, 0, (struct sockaddr*)&sin_storage, &sinlen);
-//        printf("recvfrom finished\n");
         if (responseLen < 0) {
             handle_error("can't receive a message");
         }
@@ -272,16 +265,11 @@ void* peers_listener_func(void* args) {
 
         peer_t listened_peer;
         strcpy(listened_peer.ip_addr, buffer);
-//        listened_peer.ip_addr = buffer;
         listened_peer.last_time_was_active = clock();
 
         update_list_with_peer(listened_peer, &list);
 
         print_actives(&list);
-//        printf("Received message: %s\n", buffer);
-
-//        printf("listener is here\n");
-//        sleep(5);
     }
 }
 
@@ -294,7 +282,7 @@ void* peers_speaker_func(void * args) {
 
     int socket_fd = create_socket(is_valid_ipv4_addr(in_struct->mc_group_addr) ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
     make_socket_reusable(socket_fd);
-    configure_speaker_socket(socket_fd, &addr, in_struct); //TODO rename func to configure send socket
+    configure_speaker_socket(socket_fd, &addr, in_struct);
 
 
     struct sockaddr_storage unique_addr_storage;
@@ -332,8 +320,6 @@ void* peers_speaker_func(void * args) {
 
     char addr_str[(is_valid_ipv4_addr(in_struct->speaker_addr) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN) + PORT_LEN + 1];
     get_addr_as_str(&unique_addr_storage, addr_str, sizeof(addr_str), in_struct);
-
-    printf("speaker is entering infinite loop\n");
     while(1) {
         const char* msg = addr_str;
         int n_bytes;
@@ -372,16 +358,15 @@ int get_addr_as_str(struct sockaddr_storage *addr_storage, char *str_buffer, siz
     char ip_str[is_valid_ipv4_addr(in_struct->speaker_addr) ? INET_ADDRSTRLEN : INET6_ADDRSTRLEN];
     if (is_valid_ipv4_addr(in_struct->speaker_addr)) {
         struct sockaddr_in* addr = (struct sockaddr_in*)addr_storage;
-        inet_ntop(AF_INET, (const void *) addr->sin_addr.s_addr, ip_str, sizeof(ip_str));
+        inet_ntop(AF_INET, &addr->sin_addr.s_addr, ip_str, sizeof(ip_str));
         snprintf(str_buffer, buff_len, "%s:%d", ip_str, ntohs(addr->sin_port));
     } else if (is_valid_ipv6_addr(in_struct->speaker_addr)) {
         struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr_storage;
-        inet_ntop(AF_INET6, (const void *) addr6->sin6_addr.s6_addr, ip_str, sizeof(ip_str)); //TODO SMTH MAY BE WRONG HERE
+        inet_ntop(AF_INET6, &addr6->sin6_addr.s6_addr, ip_str, sizeof(ip_str)); //TODO SMTH MAY BE WRONG HERE
         snprintf(str_buffer, buff_len, "%s:%d", ip_str, ntohs(addr6->sin6_port));
     } else {
         printf("invalid addr\n");
     }
-    printf("speaker addr: %s\n", str_buffer);
-    //strBuf[INET_ADDRSTRLEN + PORT_LEN + 1] = '\0';
+
     return 0;
 }
