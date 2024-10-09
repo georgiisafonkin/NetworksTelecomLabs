@@ -36,8 +36,6 @@ typedef struct {
 
 pthread_mutex_t mutex;
 
-//TODO IPv6 support
-//TODO FIX SEGMENTATION FAULT WHEN PEER IS DEAD
 //TODO not count self in actives list
 
 peers_list list;
@@ -46,7 +44,7 @@ clock_t last_time_written;
 pthread_mutex_t mutex;
 
 int is_alive(peer_t peer);
-int remove_peer_at(int i, peers_list* list);
+void remove_peer_at(int i, peers_list* list);
 void remove_dead_peers(peers_list *list);
 void update_list_with_peer(peer_t peer, peers_list* list);
 void print_actives(peers_list* list);
@@ -89,34 +87,48 @@ int main(int argc, char* argv[]) {
 }
 
 int is_alive(peer_t peer) {
-    pthread_mutex_lock(&mutex);
     if (((double)(clock() - peer.last_time_was_active))/CLOCKS_PER_SEC > (double)LIVE_TIMOUT/TIME_COEF) {
         printf("peer %s is dead\n", peer.ip_addr);
         return 0;
     }
-    pthread_mutex_unlock(&mutex);
     return 1;
 }
 
-int remove_peer_at(int i, peers_list* list) {
-    int distance = list->length - i;
-    if (distance < 0) {
+void remove_peer_at(int i, peers_list* list) {
+    int shifted_size = list->length - i - 1;
+    if (shifted_size < 0) {
         handle_error("remove_peer_at: incorrect index");
+        return;
     }
-    memmove(&list->peers + i, &list->peers + i + 1, distance * sizeof(peer_t));
-    bzero(&list->peers + list->length - 1, 1);
-    --list->length;
+
+    printf("list length: %d\t", list->length);
+    printf("index: %d\t", i);
+    printf("distance: %d\n", shifted_size);
+
+    if (shifted_size > 0) {
+        memcpy(&list->peers[i], &list->peers[i + 1], shifted_size * sizeof(peer_t));
+    }
+
+    --(list->length);
 }
+
 
 void remove_dead_peers(peers_list *list) {
     if (((double)(clock() - last_time_checked))/CLOCKS_PER_SEC <= (double)CHECK_TIMEOUT/TIME_COEF) {
         return;
     }
-    for(int i = 0; i < list->length; ++i) {
+    int i = 0;
+    while (i < list->length) {
         if (!is_alive(list->peers[i])) {
             remove_peer_at(i, list);
         }
+        ++i;
     }
+//    for(int i = 0; i < list->length; ++i) {
+//        if (!is_alive(list->peers[i])) {
+//            remove_peer_at(i, list);
+//        }
+//    }
     last_time_checked = clock();
 }
 
