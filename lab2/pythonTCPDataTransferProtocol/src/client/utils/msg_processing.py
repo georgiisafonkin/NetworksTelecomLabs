@@ -1,7 +1,5 @@
 """useful funcs to handle different types of input messages in a right way"""
-from pyexpat.errors import messages
 
-from src.client.main import send_single_chunk
 from src.protocol.messages import *
 
 def handle_any(msg_obj):
