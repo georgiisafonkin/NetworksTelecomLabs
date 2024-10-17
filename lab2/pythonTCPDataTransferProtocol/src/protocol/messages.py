@@ -1,3 +1,7 @@
+from src.client.main import CHUNK_SIZE
+
+CHUNK_SIZE = 1024 * 1000 + 512
+
 class Message():
     def __init__(self, __message_type):
         self.__message_type = __message_type
