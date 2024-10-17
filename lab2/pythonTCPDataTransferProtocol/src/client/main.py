@@ -1,10 +1,14 @@
 import os
 import sys
 from socket import *
+
+from src.client.utils.receiving import convert_json_to_obj
 from src.client.utils.sending import read_data_in_chunks, create_chunk, convert_to_json, send_single_chunk
+from src.protocol.messages import Complete
 
 CHUNK_DATA_SIZE = 1024
 CHUNK_SIZE = 1024 + 512
+
 def get_file_name(filepath):
     return filepath.split('/')[-1]
 
@@ -22,7 +26,19 @@ f = open(f'{file_path}', 'rb')
 g = read_data_in_chunks(f, file_size)
 
 i = 0
-while True:
-    for chunk in g:
-        send_single_chunk(socket, create_chunk(i, chunk))
-        socket.recv(CHUNK_SIZE)
+
+for chunk in g:
+    cur_chunk = create_chunk(i, chunk)
+    send_single_chunk(socket, cur_chunk)
+    msg_obj = convert_json_to_obj(socket.recv(CHUNK_SIZE))
+    while msg_obj.get('status') != 'OK':
+        send_single_chunk(socket, cur_chunk)
+        msg_obj = convert_json_to_obj(socket.recv(CHUNK_SIZE))
+    ++i
+
+
+send_single_chunk(socket, Complete("SUCCESS"))
+socket.recv(CHUNK_SIZE)
+
+f.close()
+socket.close()
