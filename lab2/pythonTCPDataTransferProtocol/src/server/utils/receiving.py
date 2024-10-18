@@ -1,7 +1,3 @@
-import json
-
-from src.protocol.messages import Acknowledge
-
 
 def handle_chunk(file_object, msg_obj):
     file_object.seek(msg_obj.get('chunk_index'))

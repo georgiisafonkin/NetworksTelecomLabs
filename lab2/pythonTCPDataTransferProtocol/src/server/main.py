@@ -1,14 +1,9 @@
 import sys
-from multiprocessing.connection import answer_challenge
+import json
 from socket import *
-
-from src.client.utils.receiving import convert_json_to_obj
-from src.protocol import *
-from src.protocol.messages import CHUNK_SIZE
-from src.server.utils.receiving import handle_chunk
-
+from utils.receiving import *
 ADDR = sys.argv[1]
-PORT = sys.argv[2]
+PORT = int(sys.argv[2])
 
 s = socket(AF_INET, SOCK_STREAM)
 s.bind((ADDR, PORT))
@@ -22,7 +17,7 @@ f = None
 
 while True:
     msg_json = conn.recv(CHUNK_SIZE)
-    msg_obj = convert_json_to_obj(msg_json)
+    msg_obj = json.loads(msg_json)
     print(msg_obj)
     t = msg_obj.get('message_type')
     if t == "METADATA":

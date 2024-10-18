@@ -2,8 +2,8 @@
     parsing json to objects etc."""
 
 import json
-from src.protocol.messages import *
-from src.client.main import CHUNK_SIZE
+from protocol.messages import *
+from client.main import CHUNK_SIZE
 
 def receive_msg(socket) -> str:
     return socket.recv(CHUNK_SIZE)

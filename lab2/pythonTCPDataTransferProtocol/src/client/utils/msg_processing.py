@@ -1,7 +1,7 @@
 """useful funcs to handle different types of input messages in a right way"""
 
-from src.protocol.messages import *
-from src.client.utils import *
+from protocol.messages import *
+from client.utils import *
 
 def handle_any(msg_obj):
     msg_type = msg_obj.get_message_type()

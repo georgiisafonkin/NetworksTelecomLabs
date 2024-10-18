@@ -2,9 +2,9 @@ import os
 import sys
 from socket import *
 
-from src.client.utils.receiving import convert_json_to_obj
-from src.client.utils.sending import read_data_in_chunks, create_chunk, convert_to_json, send_single_chunk
-from src.protocol.messages import Complete
+from utils.receiving import convert_json_to_obj
+from utils.sending import read_data_in_chunks, create_chunk, convert_to_json, send_single_chunk
+from protocol.messages import Complete
 
 CHUNK_DATA_SIZE = 1024
 CHUNK_SIZE = 1024 + 512

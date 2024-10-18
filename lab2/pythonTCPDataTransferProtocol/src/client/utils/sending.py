@@ -4,8 +4,8 @@
 
 import json
 
-from src.client.main import CHUNK_SIZE
-from src.protocol.messages import *
+from client.main import CHUNK_SIZE
+from protocol.messages import *
 
 def read_data_in_chunks(file_object, chunk_size=CHUNK_SIZE):
     while True:

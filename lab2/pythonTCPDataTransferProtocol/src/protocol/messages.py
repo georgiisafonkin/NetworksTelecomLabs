@@ -1,5 +1,3 @@
-from src.client.main import CHUNK_SIZE
-
 CHUNK_SIZE = 1024 * 1000 + 512
 
 class Message():
