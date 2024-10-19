@@ -2,7 +2,7 @@
 
 from protocol.messages import *
 from client.utils import *
-from sending import send_single_chunk
+from sending import send_msg
 
 def handle_any(msg_obj):
     msg_type = msg_obj.get_message_type()
@@ -28,9 +28,9 @@ def handle_ack(msg_obj):
     chunk_index = msg_obj.get_chunk_index()
     recv_status = msg_obj.get_recv_status()
     if (recv_status == "OK"):
-        send_single_chunk() #TODO reading and sent the NEXT chunk
+        send_msg() #TODO reading and sent the NEXT chunk
     elif (recv_status == "ERROR"):
-        send_single_chunk() #TODO try to send the SAME chunk again
+        send_msg() #TODO try to send the SAME chunk again
 
 def handle_complete():
     pass

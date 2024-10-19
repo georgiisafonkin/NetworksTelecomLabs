@@ -1,21 +1,12 @@
 from protocol.messages import *
 
-def handle_chunk(file_object, msg_obj):
-    file_object.seek(msg_obj.get('chunk_index'))
-    bytes_n = file_object.write(msg_obj.get('data'))
-    if bytes_n != len(msg_obj.get("chunk_data_size")):
-        return Acknowledge(msg_obj.get('chunk_index'), 'ERROR')
-    return Acknowledge(msg_obj.get('chunk_index'), 'OK')
+def handle_chunk(file_object, chunk_obj):
+    file_object.seek(chunk_obj.get_chunk_index() * DATA_SIZE_IN_CHUNK)
+    bytes_n = file_object.write(chunk_obj.get_data())
+    if bytes_n != DATA_SIZE_IN_CHUNK:
+        return Acknowledge(chunk_obj.get_chunk_index(), 'ERROR')
+    return Acknowledge(chunk_obj.get_chunk_index(), 'OK')
 
-
-def handle_msg(msg_obj, file_object):
-    t = msg_obj.get('message_type')
-    if t == 'METADATA':
-        file_object = open(f"uploads/{msg_obj.get('file_name')}", "+wb")
-        return None
-    elif t == 'CHUNK':
-        return handle_chunk()
-    elif t == 'COMPLETE':
-        if msg_obj.get('status') == 'SUCCESS':
-            return None
-        pass
+def handle_metadata(file_object, metadata):
+    file_object = open(f"uploads/{metadata.get_filename()}", "+wb")
+    return None

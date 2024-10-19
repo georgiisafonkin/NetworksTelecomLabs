@@ -1,5 +1,5 @@
+import os
 import sys
-import json
 from socket import *
 from utils.receiving import *
 ADDR = sys.argv[1]
@@ -16,17 +16,26 @@ conn, address = s.accept()
 f = None
 
 while True:
+    print("i am at the start of loop iteration")
     msg_json = conn.recv(CHUNK_SIZE)
-    print(msg_json)
-    msg_obj = json.loads(msg_json)
-    print(msg_obj)
-    t = msg_obj.get('message_type')
+    print(msg_json.decode("utf-8"))
+    msg_obj = Message.from_json(msg_json.decode('utf-8'))
+    t = msg_obj.get_message_type()
     if t == "METADATA":
-        f = open(f"uploads/{t.get('filename')}", 'wb+')
+        if not os.path.exists('uploads'):
+            os.makedirs('uploads')
+        m = Metadata.from_json(msg_json.decode('utf-8'))
+        f = open(f"uploads/{m.get_filename()}", 'wb+')
     elif t == "CHUNK":
+        chunk = Chunk.from_json(msg_json.decode('utf-8'))
         if f is not None: #TODO is it good practise write like that???
-            s.send(handle_chunk(f, msg_obj))
+            dts = handle_chunk(f, chunk).to_json().encode('utf-8')
+            print(dts)
+            s.send(dts)
         else:
             raise None
     elif t == "COMPLETE":
         break
+
+print("File transferring complete")
+f.close()

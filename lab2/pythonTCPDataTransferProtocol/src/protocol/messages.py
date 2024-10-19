@@ -1,14 +1,23 @@
 import base64
 import json
 
-CHUNK_SIZE = 1024 * 1000 + 512
+CHUNK_SIZE = 8192
+DATA_SIZE_IN_CHUNK = 32 # 1 KiB
 
 class Message():
     def __init__(self, __message_type):
         self.__message_type = __message_type
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps({
+            'message_type': self.get_message_type(),
+        }, sort_keys=True, indent=4)
+
+    @staticmethod
+    def from_json(json_str):
+        obj = json.loads(json_str)
+        message_type = obj['message_type']
+        return Message(message_type)
 
     def get_message_type(self): return self.__message_type
 
@@ -19,7 +28,24 @@ class Metadata(Message):
         super().__init__("METADATA")
         self.__filename = __filename
         self.__file_size = __file_size
-        self.__chunk_size = __chunk_size
+        self.__chunk_size = __chunk_size #TODO remove field, because unused
+
+    def to_json(self):
+        return json.dumps({
+            'message_type': self.get_message_type(),
+            'filename': self.__filename,
+            'file_size': self.__file_size,
+            'chunk_size': self.__chunk_size,
+        }, sort_keys=True, indent=4)
+
+
+    @staticmethod
+    def from_json(json_str):
+        obj = json.loads(json_str)
+        filename = obj['filename']
+        file_size = obj['file_size']
+        chunk_size = obj['chunk_size']
+        return Metadata(filename, file_size, chunk_size)
 
     def get_filename(self): return self.__filename
 
@@ -40,17 +66,23 @@ class Chunk(Message):
         self.__data = __data
 
     def to_json(self):
-        # If the data is binary, we encode it to base64
         if isinstance(self.__data, bytes):
             encoded_data = base64.b64encode(self.__data).decode('utf-8')
         else:
-            encoded_data = self.__data  # If it's not binary, keep it as is
+            encoded_data = self.__data
 
-        # Manually construct a dictionary representing the object
         return json.dumps({
-            'chunk_index': self.__chunk_index,  # Accessing private attribute directly
-            'data': encoded_data  # Base64 encoded data for binary
+            'message_type': self.get_message_type(),
+            'chunk_index': self.__chunk_index,
+            'data': encoded_data
         }, sort_keys=True, indent=4)
+
+    @staticmethod
+    def from_json(json_str):
+        obj = json.loads(json_str)
+        chunk_index = obj['chunk_index']
+        data = base64.b64decode(obj['data']) if isinstance(obj['data'], str) else obj['data']
+        return Chunk(chunk_index, data)
 
     def get_chunk_index(self): return self.__chunk_index
 
@@ -66,6 +98,21 @@ class Acknowledge(Message):
         self.__chunk_index = __chunk_index
         self.__status = __status
 
+    def to_json(self):
+        return json.dumps({
+            'message_type': self.get_message_type(),
+            'chunk_index': self.__chunk_index,
+            'status': self.__status
+        }, sort_keys=True, indent=4)
+
+
+    @staticmethod
+    def from_json(json_str):
+        obj = json.loads(json_str)
+        chunk_index = obj['chunk_index']
+        status = obj['status']
+        return Acknowledge(chunk_index, status)
+
     def get_chunk_index(self): return self.__chunk_index
 
     def get_status(self): return self.__status
@@ -78,6 +125,19 @@ class Complete(Message):
     def __init__(self, __status):
         super().__init__("COMPLETE")
         self.__status = __status
+
+    def to_json(self):
+        return json.dumps({
+            'message_type': self.get_message_type(),
+            'status': self.__status
+        }, sort_keys=True, indent=4)
+
+
+    @staticmethod
+    def from_json(json_str):
+        obj = json.loads(json_str)
+        status = obj['status']
+        return Complete(status)
 
     def get_status(self): return self.__status
 
