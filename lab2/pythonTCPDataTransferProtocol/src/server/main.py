@@ -17,6 +17,7 @@ f = None
 
 while True:
     msg_json = conn.recv(CHUNK_SIZE)
+    print(msg_json)
     msg_obj = json.loads(msg_json)
     print(msg_obj)
     t = msg_obj.get('message_type')

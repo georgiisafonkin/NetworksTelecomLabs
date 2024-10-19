@@ -2,6 +2,7 @@
 
 from protocol.messages import *
 from client.utils import *
+from sending import send_single_chunk
 
 def handle_any(msg_obj):
     msg_type = msg_obj.get_message_type()

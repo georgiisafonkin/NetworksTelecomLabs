@@ -1,8 +1,14 @@
+import base64
+import json
+
 CHUNK_SIZE = 1024 * 1000 + 512
 
 class Message():
     def __init__(self, __message_type):
         self.__message_type = __message_type
+
+    def to_json(self):
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
     def get_message_type(self): return self.__message_type
 
@@ -32,6 +38,19 @@ class Chunk(Message):
         super().__init__("CHUNK")
         self.__chunk_index = __chunk_index
         self.__data = __data
+
+    def to_json(self):
+        # If the data is binary, we encode it to base64
+        if isinstance(self.__data, bytes):
+            encoded_data = base64.b64encode(self.__data).decode('utf-8')
+        else:
+            encoded_data = self.__data  # If it's not binary, keep it as is
+
+        # Manually construct a dictionary representing the object
+        return json.dumps({
+            'chunk_index': self.__chunk_index,  # Accessing private attribute directly
+            'data': encoded_data  # Base64 encoded data for binary
+        }, sort_keys=True, indent=4)
 
     def get_chunk_index(self): return self.__chunk_index
 
