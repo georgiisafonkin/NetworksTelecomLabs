@@ -33,8 +33,6 @@ for chunk in g:
     # print(cur_chunk.to_json())
     send_msg(socket, cur_chunk)
     received_json_str = socket.recv(CHUNK_SIZE)
-    if received_json_str == b'':
-         continue
     ack_obj = Acknowledge.from_json(received_json_str.decode('utf-8'))
     while ack_obj.get_status() != 'OK':
         print(cur_chunk)
@@ -44,10 +42,20 @@ for chunk in g:
 
 
 print("CLIENT EXIT THE LOOP")
+
 send_msg(socket, Complete("SUCCESS"))
 print("CLIENT SENT COMPLETE MESSAGE")
-socket.recv(DATA_SIZE_IN_CHUNK)
-print("CLIENT RECEIVED LAST ACK FROM SERVER")
+
+received_json_str = socket.recv(CHUNK_SIZE)
+
+msg_obj = Message.from_json(received_json_str.decode('utf-8'))
+if (msg_obj.get_message_type() == 'COMPLETE'):
+    print("here")
+    c_msg = Complete.from_json(received_json_str.decode('utf-8'))
+    if c_msg.get_status() == 'SUCCESS':
+        print("File upload completed. SUCCESS")
+    else:
+        print("File upload failed. FAILURE")
 
 f.close()
 socket.close()

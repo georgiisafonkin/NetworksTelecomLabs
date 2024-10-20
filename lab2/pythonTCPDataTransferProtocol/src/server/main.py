@@ -1,6 +1,7 @@
 import os
 import sys
 from socket import *
+
 from utils.receiving import *
 ADDR = sys.argv[1]
 PORT = int(sys.argv[2])
@@ -15,6 +16,8 @@ print("SERVER ACCEPTED CLIENT")
 conn, address = s.accept()
 
 f = None
+f_size = 0
+f_name = ""
 
 print("SERVER ENTERS THE LOOP")
 while True:
@@ -28,6 +31,8 @@ while True:
             os.makedirs('uploads')
         m = Metadata.from_json(msg_json.decode('utf-8'))
         f = open(f"uploads/{m.get_filename()}", 'wb+')
+        f_size = m.get_file_size()
+        f_name = m.get_filename()
     elif t == "CHUNK":
         print("SERVER RECEIVED CHUNK FROM CLIENT")
         chunk = Chunk.from_json(msg_json.decode('utf-8'))
@@ -38,11 +43,18 @@ while True:
         else:
             raise None
     elif t == "COMPLETE":
+        f.close()
         print("SERVER RECEIVED COMPLETE FROM CLIENT")
+        print("SERVER CLOSED THE FILE")
+        if os.path.getsize(f"uploads/{f_name}") == f_size:
+            csuccess = Complete("SUCCESS").to_json().encode('utf-8')
+            print(csuccess)
+            conn.send(csuccess)
+        else:
+            cfail = Complete("FAIL").to_json().encode('utf-8')
+            print(cfail)
+            print(f"uploaded size: {os.path.getsize(f'uploads/{f_name}')}\nf_size: {f_size}")
+            conn.send(cfail)
         break
 
 print("SERVER END THE LOOP")
-
-f.close()
-
-print("SERVER CLOSED FILE")
