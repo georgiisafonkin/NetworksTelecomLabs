@@ -30,12 +30,11 @@ for chunk in g:
     cur_chunk = create_chunk(i, chunk)
     # print(cur_chunk.to_json())
     send_msg(socket, cur_chunk)
-    received_json_str = b''
-    while received_json_str == b'':
-        received_json_str = socket.recv(CHUNK_SIZE)
-    print("received: " + received_json_str.decode("utf-8"))
+    received_json_str = socket.recv(CHUNK_SIZE)
+    if received_json_str == b'':
+         continue
     ack_obj = Acknowledge.from_json(received_json_str.decode('utf-8'))
-    while ack_obj.get('status') != 'OK':
+    while ack_obj.get_status() != 'OK':
         print(cur_chunk)
         send_msg(socket, cur_chunk)
         ack_obj = convert_json_to_obj(socket.recv(CHUNK_SIZE))

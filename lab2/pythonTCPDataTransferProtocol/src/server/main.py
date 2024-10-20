@@ -31,7 +31,7 @@ while True:
         if f is not None: #TODO is it good practise write like that???
             dts = handle_chunk(f, chunk).to_json().encode('utf-8')
             print(dts)
-            s.send(dts)
+            conn.send(dts)
         else:
             raise None
     elif t == "COMPLETE":
