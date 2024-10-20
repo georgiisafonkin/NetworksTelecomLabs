@@ -25,9 +25,11 @@ send_msg(socket, Metadata(file_name, file_size, DATA_SIZE_IN_CHUNK))
 f = open(f'{file_path}', 'rb+')
 g = read_data_in_chunks(f, DATA_SIZE_IN_CHUNK)
 
+
+print("CLIENT ENTER THE LOOP")
 i = 0
 for chunk in g:
-    cur_chunk = create_chunk(i, chunk)
+    cur_chunk = Chunk(i, chunk, len(chunk))
     # print(cur_chunk.to_json())
     send_msg(socket, cur_chunk)
     received_json_str = socket.recv(CHUNK_SIZE)
@@ -37,12 +39,16 @@ for chunk in g:
     while ack_obj.get_status() != 'OK':
         print(cur_chunk)
         send_msg(socket, cur_chunk)
-        ack_obj = convert_json_to_obj(socket.recv(CHUNK_SIZE))
+        ack_obj = Acknowledge.from_json(socket.recv(CHUNK_SIZE).decode('utf-8'))
     i += 1
 
 
+print("CLIENT EXIT THE LOOP")
 send_msg(socket, Complete("SUCCESS"))
+print("CLIENT SENT COMPLETE MESSAGE")
 socket.recv(DATA_SIZE_IN_CHUNK)
+print("CLIENT RECEIVED LAST ACK FROM SERVER")
 
 f.close()
 socket.close()
+print("CLIENT CLOSED FILE AND SOCKET")

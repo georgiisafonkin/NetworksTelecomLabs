@@ -14,6 +14,7 @@ def read_data_in_chunks(file_object, chunk_size=DATA_SIZE_IN_CHUNK):
         yield data
 
 def send_msg(socket, msg):
+    s_msg = msg.to_json().encode('utf-8')
     socket.send(msg.to_json().encode('utf-8'))
 
 def create_chunk(index, data):

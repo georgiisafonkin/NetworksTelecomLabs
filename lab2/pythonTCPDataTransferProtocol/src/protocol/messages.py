@@ -60,10 +60,11 @@ class Metadata(Message):
     def set_chunk_size(self, chunk_size): self.__chunk_size = chunk_size
 
 class Chunk(Message):
-    def __init__(self, __chunk_index, __data):
+    def __init__(self, __chunk_index, __data, __data_bytes):
         super().__init__("CHUNK")
         self.__chunk_index = __chunk_index
         self.__data = __data
+        self.__data_bytes = __data_bytes
 
     def to_json(self):
         if isinstance(self.__data, bytes):
@@ -74,7 +75,8 @@ class Chunk(Message):
         return json.dumps({
             'message_type': self.get_message_type(),
             'chunk_index': self.__chunk_index,
-            'data': encoded_data
+            'data': encoded_data,
+            'data_bytes': self.__data_bytes
         }, sort_keys=True, indent=4)
 
     @staticmethod
@@ -82,15 +84,19 @@ class Chunk(Message):
         obj = json.loads(json_str)
         chunk_index = obj['chunk_index']
         data = base64.b64decode(obj['data']) if isinstance(obj['data'], str) else obj['data']
-        return Chunk(chunk_index, data)
+        data_bytes = len(data)
+        return Chunk(chunk_index, data, data_bytes)
 
     def get_chunk_index(self): return self.__chunk_index
 
     def get_data(self): return self.__data
 
+    def get_data_bytes(self): return self.__data_bytes
+
     def set_chunk_index(self, __chunk_index): self.__chunk_index = __chunk_index
 
     def set_data(self, __data): self.__data = __data
+
 
 class Acknowledge(Message):
     def __init__(self, __chunk_index, __status):
