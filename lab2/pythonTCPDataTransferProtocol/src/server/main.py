@@ -1,6 +1,8 @@
 import os
 import sys
+import threading
 import time
+from concurrent.futures.thread import ThreadPoolExecutor
 from socket import *
 
 from server.utils.time_calcs.AverageSpeedCalculator import AverageSpeedCalculator
@@ -25,7 +27,15 @@ def handle_client(conn):
 
     print("SERVER ENTERS THE LOOP")
     while True:
-        last_t_output_time = time.time()
+        if time.time() - last_t_output_time > SPEED_TIME_INTERVAL:
+            average = average_calc.calculate_average_speed()
+            instantaneous = instantaneous_calc.calculate_instantaneous_speed()
+            # Print speeds in KiB (1 KiB = 1024 bytes)
+            print(f"{f_name} upload speed:")
+            print(f"Instantaneous: {instantaneous / 1024:.2f} KiBs\nAverage: {average / 1024:.2f} KiBs")
+            # Update last output time
+            last_t_output_time = time.time()
+
         msg_json = conn.recv(CHUNK_SIZE)
         # print(msg_json.decode("utf-8"))
         msg_obj = Message.from_json(msg_json.decode('utf-8'))
@@ -68,6 +78,7 @@ def handle_client(conn):
             average = average_calc.calculate_average_speed()
             instantaneous = instantaneous_calc.calculate_instantaneous_speed()
             # Print speeds in KiB (1 KiB = 1024 bytes)
+            print(f"{f_name} upload speed:")
             print(f"Instantaneous: {instantaneous / 1024:.2f} KiBs\nAverage: {average / 1024:.2f} KiBs")
             # Update last output time
             last_t_output_time = time.time()
@@ -85,7 +96,7 @@ def handle_client(conn):
 ADDR = sys.argv[1]
 PORT = int(sys.argv[2])
 SPEED_TIME_INTERVAL = 3
-MAX_CLIENTS_NUMBER = 20
+MAX_CLIENTS_NUMBER = 5
 
 s = socket(AF_INET, SOCK_STREAM)
 s.bind((ADDR, PORT))
@@ -93,7 +104,10 @@ s.listen(5)
 
 #TODO now it works on single thread with single connection, must work with few threads and few connections later
 
-print("SERVER ACCEPTED CLIENT")
+executor = ThreadPoolExecutor(max_workers=MAX_CLIENTS_NUMBER)
 
-conn, address = s.accept()
-handle_client(conn)
+print("SERVER ACCEPTED CLIENT")
+i = 0
+while True:
+    conn, address = s.accept()
+    future = executor.submit(handle_client, conn)

@@ -2,7 +2,7 @@ import base64
 import json
 
 CHUNK_SIZE = 8192
-DATA_SIZE_IN_CHUNK = 32 # 1 KiB
+DATA_SIZE_IN_CHUNK = 1024 # 1 KiB
 
 class Message():
     def __init__(self, __message_type):
