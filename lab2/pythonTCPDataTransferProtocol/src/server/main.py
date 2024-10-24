@@ -1,13 +1,12 @@
 import os
 import sys
-import threading
 import time
 from concurrent.futures.thread import ThreadPoolExecutor
 from socket import *
 
 from server.utils.time_calcs.AverageSpeedCalculator import AverageSpeedCalculator
 from server.utils.time_calcs.InstantaneousSpeedCalculator import InstantaneousSpeedCalculator
-from utils.receiving import *
+from server.utils.receiving import *
 
 
 def handle_client(conn):
@@ -61,8 +60,8 @@ def handle_client(conn):
                 raise None
         elif t == "COMPLETE":
             f.close()
-            print("SERVER RECEIVED COMPLETE FROM CLIENT")
-            print("SERVER CLOSED THE FILE")
+            # print("SERVER RECEIVED COMPLETE FROM CLIENT")
+            # print("SERVER CLOSED THE FILE")
             if os.path.getsize(f"uploads/{f_name}") == f_size:
                 csuccess = Complete("SUCCESS").to_json().encode('utf-8')
                 # print(csuccess)
@@ -74,23 +73,15 @@ def handle_client(conn):
                 conn.send(cfail)
             break
 
-        if time.time() - last_t_output_time > SPEED_TIME_INTERVAL:
-            average = average_calc.calculate_average_speed()
-            instantaneous = instantaneous_calc.calculate_instantaneous_speed()
-            # Print speeds in KiB (1 KiB = 1024 bytes)
-            print(f"{f_name} upload speed:")
-            print(f"Instantaneous: {instantaneous / 1024:.2f} KiBs\nAverage: {average / 1024:.2f} KiBs")
-            # Update last output time
-            last_t_output_time = time.time()
-
     conn.close()
     average = average_calc.calculate_average_speed()
     instantaneous = instantaneous_calc.calculate_instantaneous_speed()
     # Print speeds in KiB (1 KiB = 1024 bytes)
+    print(f"{f_name} upload speed:")
     print(f"Instantaneous: {instantaneous / 1024:.2f} KiBs\nAverage: {average / 1024:.2f} KiBs")
     # Update last output time
     last_t_output_time = time.time()
-    print("SERVER END THE LOOP")
+    # print("SERVER END THE LOOP")
 
 
 ADDR = sys.argv[1]

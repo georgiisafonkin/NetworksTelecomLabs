@@ -2,8 +2,7 @@ import os
 import sys
 from socket import *
 
-from utils.receiving import convert_json_to_obj
-from utils.sending import read_data_in_chunks, create_chunk, convert_to_json, send_msg
+from utils.sending import read_data_in_chunks, send_msg
 from protocol.messages import *
 
 def get_file_name(filepath):
@@ -33,14 +32,12 @@ for chunk in g:
     # print(cur_chunk.to_json())
     send_msg(socket, cur_chunk)
     received_json_str = socket.recv(CHUNK_SIZE)
-    print(f"received from server: {received_json_str}")
     ack_obj = Acknowledge.from_json(received_json_str.decode('utf-8'))
     while ack_obj.get_status() != 'OK':
         print(cur_chunk)
         send_msg(socket, cur_chunk)
         ack_obj = Acknowledge.from_json(socket.recv(CHUNK_SIZE).decode('utf-8'))
     i += 1
-    print("SINGLE CHUNK SENT")
 
 
 print("CLIENT EXIT THE LOOP")
