@@ -39,11 +39,9 @@ async def query_mistral_api(prompt: str) -> str:
     }
     payload = {
         "model": "mistral-small-latest",
-        "temperature": 1.5,
-        "top_p": 1,
-        "max_tokens": 100,  # adjust based on needs
+        "temperature": 0.2,
+        "max_tokens": 500,  # adjust based on needs
         "stream": False,
-        "stop": "",
         "random_seed": 0,
         "messages": [
             {
@@ -66,23 +64,28 @@ async def query_mistral_api(prompt: str) -> str:
         async with session.post(MINSTRALAI_REQUEST_URL, headers=headers, json=payload) as response:
             if response.status == 200:
                 data = await response.json()
-                return data["choices"][0]["message"]["content"]
+                print(data)
+                # Check if content is available
+                return data["choices"][0]["message"]["content"] or "I'm sorry, but I couldn't process that."
             else:
                 logging.error(f"Error {response.status}: {await response.text()}")
                 return "There was an error with the AI response."
 
-
 @dp.message()
 async def handle_message(message: Message) -> None:
     user_input = message.text
-    # await message.answer_chat_action("typing")
 
     try:
         ai_response = await query_mistral_api(user_input)
+        # Ensure ai_response is not empty
+        if not ai_response.strip():
+            ai_response = "The response was empty. Please try again."
         await message.answer(ai_response, parse_mode=ParseMode.HTML)
     except Exception as e:
         logging.error(f"Error handling message: {e}")
-        await message.reply(e, parse_mode=ParseMode.HTML)
+        # Convert exception to string to ensure it's a valid message text
+        await message.reply(str(e), parse_mode=ParseMode.HTML)
+
 
 
 # @dp.message()
