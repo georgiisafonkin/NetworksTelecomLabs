@@ -3,6 +3,8 @@ import logging
 import sys
 from os import getenv
 
+import re
+
 import aiohttp
 from aiogram import Bot, Dispatcher, html
 from aiogram.client.default import DefaultBotProperties
@@ -40,7 +42,7 @@ async def query_mistral_api(prompt: str) -> str:
     payload = {
         "model": "mistral-small-latest",
         "temperature": 0.2,
-        "max_tokens": 500,  # adjust based on needs
+        "max_tokens": 1000,  # adjust based on needs
         "stream": False,
         "random_seed": 0,
         "messages": [
@@ -77,16 +79,21 @@ async def handle_message(message: Message) -> None:
 
     try:
         ai_response = await query_mistral_api(user_input)
-        # Ensure ai_response is not empty
         if not ai_response.strip():
             ai_response = "The response was empty. Please try again."
-        await message.answer(ai_response, parse_mode=ParseMode.HTML)
+
+        # Escape response content for MarkdownV2
+        ai_response = escape_markdown(ai_response)
+        await message.answer(ai_response, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
         logging.error(f"Error handling message: {e}")
-        # Convert exception to string to ensure it's a valid message text
-        await message.reply(str(e), parse_mode=ParseMode.HTML)
+        error_message = escape_markdown(str(e))
+        await message.reply(error_message, parse_mode=ParseMode.MARKDOWN_V2)
 
-
+def escape_markdown(text: str) -> str:
+    # Escapes all special characters for Telegram MarkdownV2
+    escape_chars = r'([!_*\[\]()~`>#+\-=|{}.!])'
+    return re.sub(escape_chars, r'\\\1', text)
 
 # @dp.message()
 # async def echo_handler(message: Message) -> None:
