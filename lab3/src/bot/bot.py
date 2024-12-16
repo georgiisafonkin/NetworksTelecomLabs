@@ -40,7 +40,7 @@ async def query_mistral_api(prompt: str) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "mistral-small-latest",
+        "model": "mistral-large-latest",
         "temperature": 0.2,
         "max_tokens": 1000,  # adjust based on needs
         "stream": False,
